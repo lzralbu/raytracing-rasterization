@@ -11,6 +11,7 @@ typedef struct Sphere {
     Vector3 center;
     float radius;
     Color color;
+    float specular;
 } Sphere;
 
 enum LIGHT_TYPE {
@@ -28,24 +29,24 @@ typedef struct Light {
     } data;
 } Light;
 
-const int CANVAS_WIDTH = 600;
-const int CANVAS_HEIGHT = 600;
+static const int CANVAS_WIDTH = 800;
+static const int CANVAS_HEIGHT = 800;
 
-const float VIEWPORT_WIDTH = 1;
-const float VIEWPORT_HEIGHT = 1;
-const float VIEWPORT_CAMERA_DISTANCE = 1;
+static const float VIEWPORT_WIDTH = 1;
+static const float VIEWPORT_HEIGHT = 1;
+static const float VIEWPORT_CAMERA_DISTANCE = 1;
 
 #define BACKGROUND_COLOR RAYWHITE
 
-Sphere spheres[] = {
-    [0] = { .center = { 0, -1, 3 }, .radius = 1, .color = { 255, 0, 0, 255 } },
-    [1] = { .center = { 2, 0, 4 }, .radius = 1, .color = { 0, 0, 255, 255 } },
-    [2] = { .center = { -2, 0, 4 }, .radius = 1, .color = { 0, 255, 0, 255 } },
-    [3] = { .center = { 0, -5001, 0 }, .radius = 5000, .color = { 255, 255, 0, 255 } }
+static Sphere spheres[] = {
+    [0] = { .center = { 0, -1, 3 }, .radius = 1, .color = { 255, 0, 0, 255 }, .specular = 500 },
+    [1] = { .center = { 2, 0, 4 }, .radius = 1, .color = { 0, 0, 255, 255 }, .specular = 500 },
+    [2] = { .center = { -2, 0, 4 }, .radius = 1, .color = { 0, 255, 0, 255 }, .specular = 10 },
+    [3] = { .center = { 0, -5001, 0 }, .radius = 5000, .color = { 255, 255, 0, 255 }, .specular = 1000 }
 };
 #define SPHERES_SIZE (sizeof(spheres) / sizeof(Sphere))
 
-Light lights[] = {
+static Light lights[] = {
     [0] = { .type = LIGHT_TYPE_AMBIENT, .intensity = 0.2f },
     [1] = { .type = LIGHT_TYPE_POINT, .intensity = 0.6f, .data.position = { 2, 1, 0 } },
     [2] = { .type = LIGHT_TYPE_DIRECTIONAL, .intensity = 0.2f, .data.direction = { 1, 4, 4 } }
@@ -69,18 +70,32 @@ Vector2 intersect_ray_sphere(Ray ray, Sphere sphere) {
     return (Vector2){ .x = t1, .y = t2 };
 }
 
-float compute_lighting(Vector3 contact_point, Vector3 normal) {
+float compute_lighting(Vector3 contact_point, Vector3 normal, Vector3 contact_point_to_camera, float specular_exponent) {
     float intensity = 0.0f;
     for (size_t k = 0; k < LIGHTS_SIZE; ++k) {
         const Light *light = lights + k;
         if (light->type == LIGHT_TYPE_AMBIENT) {
             intensity += light->intensity;
         } else {
-            Vector3 light_vector = light->type == LIGHT_TYPE_POINT ? Vector3Subtract(light->data.position, contact_point) : light->data.direction;
+            Vector3 light_vector =
+                light->type == LIGHT_TYPE_POINT
+                    ? Vector3Subtract(light->data.position, contact_point)
+                    : light->data.direction;
 
+            // diffuse
             float dot = Vector3DotProduct(light_vector, normal);
             if (dot > 0) {
                 intensity += light->intensity * dot / (Vector3Length(light_vector) * Vector3Length(normal));
+            }
+
+            // specular
+            if (specular_exponent == -1) {
+                continue;
+            }
+            Vector3 reflection = Vector3Subtract(Vector3Scale(normal, 2 * Vector3DotProduct(normal, light_vector)), light_vector);
+            float dot2 = Vector3DotProduct(reflection, contact_point_to_camera);
+            if (dot2 > 0) {
+                intensity += light->intensity * powf(dot2 / (Vector3Length(reflection) * Vector3Length(contact_point_to_camera)), specular_exponent);
             }
         }
     }
@@ -108,20 +123,17 @@ Color trace_ray(Ray ray, float t_min, float t_max) {
     }
 
     Vector3 contact_point = Vector3Add(ray.position, Vector3Scale(ray.direction, closest_t));
-    Vector3 normal = Vector3Subtract(contact_point, closest_sphere->center);
-    normal = Vector3Scale(normal, Vector3Length(normal));
+    Vector3 normal = Vector3Normalize(Vector3Subtract(contact_point, closest_sphere->center));
 
-    float lighting = compute_lighting(contact_point, normal);
+    float lighting = compute_lighting(contact_point, normal, Vector3Negate(ray.direction), closest_sphere->specular);
     Color new_color = {
-        .r = (uint8_t)(closest_sphere->color.r * lighting),
-        .g = (uint8_t)(closest_sphere->color.g * lighting),
-        .b = (uint8_t)(closest_sphere->color.b * lighting),
+        .r = (uint8_t)Clamp((closest_sphere->color.r * lighting), 0, 255),
+        .g = (uint8_t)Clamp((closest_sphere->color.g * lighting), 0, 255),
+        .b = (uint8_t)Clamp((closest_sphere->color.b * lighting), 0, 255),
         .a = 255
     };
 
     return new_color;
-
-    // return closest_sphere->color;
 }
 
 void put_pixel(int canvas_x, int canvas_y, Color color) {
