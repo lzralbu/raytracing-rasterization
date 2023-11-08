@@ -13,6 +13,21 @@ typedef struct Sphere {
     Color color;
 } Sphere;
 
+enum LIGHT_TYPE {
+    LIGHT_TYPE_POINT,
+    LIGHT_TYPE_DIRECTIONAL,
+    LIGHT_TYPE_AMBIENT
+};
+
+typedef struct Light {
+    int type;
+    float intensity;
+    union {
+        Vector3 position;
+        Vector3 direction;
+    } data;
+} Light;
+
 const int CANVAS_WIDTH = 600;
 const int CANVAS_HEIGHT = 600;
 
@@ -22,20 +37,20 @@ const float VIEWPORT_CAMERA_DISTANCE = 1;
 
 #define BACKGROUND_COLOR RAYWHITE
 
-#define SPHERES_SIZE (size_t)3
-Sphere spheres[SPHERES_SIZE] = {
+Sphere spheres[] = {
     [0] = { .center = { 0, -1, 3 }, .radius = 1, .color = { 255, 0, 0, 255 } },
     [1] = { .center = { 2, 0, 4 }, .radius = 1, .color = { 0, 0, 255, 255 } },
     [2] = { .center = { -2, 0, 4 }, .radius = 1, .color = { 0, 255, 0, 255 } },
+    [3] = { .center = { 0, -5001, 0 }, .radius = 5000, .color = { 255, 255, 0, 255 } }
 };
+#define SPHERES_SIZE (sizeof(spheres) / sizeof(Sphere))
 
-Vector3 canvas_to_viewport(int canvas_x, int canvas_y) {
-    return (Vector3){
-        .x = (float)canvas_x * VIEWPORT_WIDTH / CANVAS_WIDTH,
-        .y = (float)canvas_y * VIEWPORT_HEIGHT / CANVAS_HEIGHT,
-        .z = VIEWPORT_CAMERA_DISTANCE
-    };
-}
+Light lights[] = {
+    [0] = { .type = LIGHT_TYPE_AMBIENT, .intensity = 0.2f },
+    [1] = { .type = LIGHT_TYPE_POINT, .intensity = 0.6f, .data.position = { 2, 1, 0 } },
+    [2] = { .type = LIGHT_TYPE_DIRECTIONAL, .intensity = 0.2f, .data.direction = { 1, 4, 4 } }
+};
+#define LIGHTS_SIZE (sizeof(lights) / sizeof(Light))
 
 Vector2 intersect_ray_sphere(Ray ray, Sphere sphere) {
     Vector3 temp_vec = Vector3Subtract(ray.position, sphere.center);
@@ -52,6 +67,25 @@ Vector2 intersect_ray_sphere(Ray ray, Sphere sphere) {
     float t1 = (-b + sqrtf(discriminant)) / (2 * a);
     float t2 = (-b - sqrtf(discriminant)) / (2 * a);
     return (Vector2){ .x = t1, .y = t2 };
+}
+
+float compute_lighting(Vector3 contact_point, Vector3 normal) {
+    float intensity = 0.0f;
+    for (size_t k = 0; k < LIGHTS_SIZE; ++k) {
+        const Light *light = lights + k;
+        if (light->type == LIGHT_TYPE_AMBIENT) {
+            intensity += light->intensity;
+        } else {
+            Vector3 light_vector = light->type == LIGHT_TYPE_POINT ? Vector3Subtract(light->data.position, contact_point) : light->data.direction;
+
+            float dot = Vector3DotProduct(light_vector, normal);
+            if (dot > 0) {
+                intensity += light->intensity * dot / (Vector3Length(light_vector) * Vector3Length(normal));
+            }
+        }
+    }
+
+    return intensity;
 }
 
 Color trace_ray(Ray ray, float t_min, float t_max) {
@@ -73,7 +107,21 @@ Color trace_ray(Ray ray, float t_min, float t_max) {
         return BACKGROUND_COLOR;
     }
 
-    return closest_sphere->color;
+    Vector3 contact_point = Vector3Add(ray.position, Vector3Scale(ray.direction, closest_t));
+    Vector3 normal = Vector3Subtract(contact_point, closest_sphere->center);
+    normal = Vector3Scale(normal, Vector3Length(normal));
+
+    float lighting = compute_lighting(contact_point, normal);
+    Color new_color = {
+        .r = (uint8_t)(closest_sphere->color.r * lighting),
+        .g = (uint8_t)(closest_sphere->color.g * lighting),
+        .b = (uint8_t)(closest_sphere->color.b * lighting),
+        .a = 255
+    };
+
+    return new_color;
+
+    // return closest_sphere->color;
 }
 
 void put_pixel(int canvas_x, int canvas_y, Color color) {
@@ -82,9 +130,24 @@ void put_pixel(int canvas_x, int canvas_y, Color color) {
     DrawPixel(screen_x, screen_y, color);
 }
 
+Vector3 canvas_to_viewport(int canvas_x, int canvas_y) {
+    return (Vector3){
+        .x = (float)canvas_x * VIEWPORT_WIDTH / CANVAS_WIDTH,
+        .y = (float)canvas_y * VIEWPORT_HEIGHT / CANVAS_HEIGHT,
+        .z = VIEWPORT_CAMERA_DISTANCE
+    };
+}
+
 void draw() {
     BeginDrawing();
     ClearBackground(BACKGROUND_COLOR);
+
+    // rlPushMatrix();
+    // rlMatrixMode(RL_PROJECTION);
+    // rlLoadIdentity();
+
+    // rlTranslatef(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 0);
+    // rlScalef(1, -1, 1);
 
     Ray ray = { 0 };
     for (int x = -CANVAS_WIDTH / 2; x <= CANVAS_WIDTH / 2; ++x) {
@@ -92,8 +155,11 @@ void draw() {
             ray.direction = canvas_to_viewport(x, y);
             Color color = trace_ray(ray, 1, INFINITY);
             put_pixel(x, y, color);
+            // DrawPixel(x, y, color);
         }
     }
+
+    // rlPopMatrix();
 
     EndDrawing();
 }
