@@ -7,12 +7,17 @@
 #include "raymath.h"
 #include "rlgl.h"
 
-typedef struct Sphere {
+typedef struct sphere_t {
     Vector3 center;
     float radius;
     Color color;
     float specular;
-} Sphere;
+} sphere_t;
+
+typedef struct ray_sphere_intersection_t {
+    sphere_t const *sphere;
+    float t;
+} ray_sphere_intersection_t;
 
 enum LIGHT_TYPE {
     LIGHT_TYPE_POINT,
@@ -20,14 +25,14 @@ enum LIGHT_TYPE {
     LIGHT_TYPE_AMBIENT
 };
 
-typedef struct Light {
+typedef struct light_t {
     int type;
     float intensity;
     union {
         Vector3 position;
         Vector3 direction;
     } data;
-} Light;
+} light_t;
 
 static const int CANVAS_WIDTH = 800;
 static const int CANVAS_HEIGHT = 800;
@@ -38,22 +43,22 @@ static const float VIEWPORT_CAMERA_DISTANCE = 1;
 
 #define BACKGROUND_COLOR RAYWHITE
 
-static Sphere spheres[] = {
+static sphere_t spheres[] = {
     [0] = { .center = { 0, -1, 3 }, .radius = 1, .color = { 255, 0, 0, 255 }, .specular = 500 },
     [1] = { .center = { 2, 0, 4 }, .radius = 1, .color = { 0, 0, 255, 255 }, .specular = 500 },
     [2] = { .center = { -2, 0, 4 }, .radius = 1, .color = { 0, 255, 0, 255 }, .specular = 10 },
     [3] = { .center = { 0, -5001, 0 }, .radius = 5000, .color = { 255, 255, 0, 255 }, .specular = 1000 }
 };
-#define SPHERES_SIZE (sizeof(spheres) / sizeof(Sphere))
+#define SPHERES_SIZE (sizeof(spheres) / sizeof(sphere_t))
 
-static Light lights[] = {
+static light_t lights[] = {
     [0] = { .type = LIGHT_TYPE_AMBIENT, .intensity = 0.2f },
     [1] = { .type = LIGHT_TYPE_POINT, .intensity = 0.6f, .data.position = { 2, 1, 0 } },
     [2] = { .type = LIGHT_TYPE_DIRECTIONAL, .intensity = 0.2f, .data.direction = { 1, 4, 4 } }
 };
-#define LIGHTS_SIZE (sizeof(lights) / sizeof(Light))
+#define LIGHTS_SIZE (sizeof(lights) / sizeof(light_t))
 
-Vector2 intersect_ray_sphere(Ray ray, Sphere sphere) {
+Vector2 intersect_ray_sphere(Ray ray, sphere_t sphere) {
     Vector3 temp_vec = Vector3Subtract(ray.position, sphere.center);
 
     float a = Vector3DotProduct(ray.direction, ray.direction);
@@ -70,17 +75,45 @@ Vector2 intersect_ray_sphere(Ray ray, Sphere sphere) {
     return (Vector2){ .x = t1, .y = t2 };
 }
 
+ray_sphere_intersection_t closest_intersection(Ray ray, float t_min, float t_max) {
+    float closest_t = INFINITY;
+    sphere_t const *closest_sphere = 0;
+    for (size_t i = 0; i < SPHERES_SIZE; ++i) {
+        Vector2 intersection_parameters = intersect_ray_sphere(ray, spheres[i]);
+        if (t_min <= intersection_parameters.x && intersection_parameters.x <= t_max && intersection_parameters.x < closest_t) {
+            closest_t = intersection_parameters.x;
+            closest_sphere = spheres + i;
+        }
+
+        if (t_min <= intersection_parameters.y && intersection_parameters.y <= t_max && intersection_parameters.y < closest_t) {
+            closest_t = intersection_parameters.y;
+            closest_sphere = spheres + i;
+        }
+    }
+    return (ray_sphere_intersection_t){ closest_sphere, closest_t };
+}
+
 float compute_lighting(Vector3 contact_point, Vector3 normal, Vector3 contact_point_to_camera, float specular_exponent) {
     float intensity = 0.0f;
     for (size_t k = 0; k < LIGHTS_SIZE; ++k) {
-        const Light *light = lights + k;
+        const light_t *light = lights + k;
         if (light->type == LIGHT_TYPE_AMBIENT) {
             intensity += light->intensity;
         } else {
-            Vector3 light_vector =
-                light->type == LIGHT_TYPE_POINT
-                    ? Vector3Subtract(light->data.position, contact_point)
-                    : light->data.direction;
+            Vector3 light_vector = light->data.direction;
+            float t_max = INFINITY;
+            if (light->type == LIGHT_TYPE_POINT) {
+                light_vector = Vector3Subtract(light->data.position, contact_point);
+                t_max = 1;
+            }
+
+            ray_sphere_intersection_t shadow_intersection = closest_intersection(
+                (Ray){ .position = contact_point, .direction = light_vector },
+                0.001f,
+                t_max);
+            if (shadow_intersection.sphere) {
+                continue;
+            }
 
             // diffuse
             float dot = Vector3DotProduct(light_vector, normal);
@@ -104,42 +137,23 @@ float compute_lighting(Vector3 contact_point, Vector3 normal, Vector3 contact_po
 }
 
 Color trace_ray(Ray ray, float t_min, float t_max) {
-    float closest_t = INFINITY;
-    Sphere const *closest_sphere = 0;
-    for (size_t i = 0; i < SPHERES_SIZE; ++i) {
-        Vector2 intersection_parameters = intersect_ray_sphere(ray, spheres[i]);
-        if (t_min <= intersection_parameters.x && intersection_parameters.x <= t_max && intersection_parameters.x < closest_t) {
-            closest_t = intersection_parameters.x;
-            closest_sphere = spheres + i;
-        }
-
-        if (t_min <= intersection_parameters.y && intersection_parameters.y <= t_max && intersection_parameters.y < closest_t) {
-            closest_t = intersection_parameters.y;
-            closest_sphere = spheres + i;
-        }
-    }
-    if (closest_sphere == 0) {
+    ray_sphere_intersection_t intersection = closest_intersection(ray, t_min, t_max);
+    if (!intersection.sphere) {
         return BACKGROUND_COLOR;
     }
 
-    Vector3 contact_point = Vector3Add(ray.position, Vector3Scale(ray.direction, closest_t));
-    Vector3 normal = Vector3Normalize(Vector3Subtract(contact_point, closest_sphere->center));
+    Vector3 contact_point = Vector3Add(ray.position, Vector3Scale(ray.direction, intersection.t));
+    Vector3 normal = Vector3Normalize(Vector3Subtract(contact_point, intersection.sphere->center));
 
-    float lighting = compute_lighting(contact_point, normal, Vector3Negate(ray.direction), closest_sphere->specular);
+    float lighting = compute_lighting(contact_point, normal, Vector3Negate(ray.direction), intersection.sphere->specular);
     Color new_color = {
-        .r = (uint8_t)Clamp((closest_sphere->color.r * lighting), 0, 255),
-        .g = (uint8_t)Clamp((closest_sphere->color.g * lighting), 0, 255),
-        .b = (uint8_t)Clamp((closest_sphere->color.b * lighting), 0, 255),
+        .r = (uint8_t)Clamp((intersection.sphere->color.r * lighting), 0, 255),
+        .g = (uint8_t)Clamp((intersection.sphere->color.g * lighting), 0, 255),
+        .b = (uint8_t)Clamp((intersection.sphere->color.b * lighting), 0, 255),
         .a = 255
     };
 
     return new_color;
-}
-
-void put_pixel(int canvas_x, int canvas_y, Color color) {
-    int screen_x = CANVAS_WIDTH / 2 + canvas_x;
-    int screen_y = CANVAS_HEIGHT / 2 - canvas_y;
-    DrawPixel(screen_x, screen_y, color);
 }
 
 Vector3 canvas_to_viewport(int canvas_x, int canvas_y) {
@@ -150,29 +164,24 @@ Vector3 canvas_to_viewport(int canvas_x, int canvas_y) {
     };
 }
 
+Vector2 canvas_to_screen(int canvas_x, int canvas_y) {
+    return (Vector2){
+        .x = CANVAS_WIDTH / 2.0f + (float)canvas_x,
+        .y = CANVAS_HEIGHT / 2.0f - (float)canvas_y
+    };
+}
+
+void put_pixel(int canvas_x, int canvas_y, Color color) {
+    DrawPixelV(canvas_to_screen(canvas_x, canvas_y), color);
+}
+
+RenderTexture target;
+
 void draw() {
     BeginDrawing();
-    ClearBackground(BACKGROUND_COLOR);
-
-    // rlPushMatrix();
-    // rlMatrixMode(RL_PROJECTION);
-    // rlLoadIdentity();
-
-    // rlTranslatef(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 0);
-    // rlScalef(1, -1, 1);
-
-    Ray ray = { 0 };
-    for (int x = -CANVAS_WIDTH / 2; x <= CANVAS_WIDTH / 2; ++x) {
-        for (int y = -CANVAS_HEIGHT / 2; y <= CANVAS_HEIGHT / 2; ++y) {
-            ray.direction = canvas_to_viewport(x, y);
-            Color color = trace_ray(ray, 1, INFINITY);
-            put_pixel(x, y, color);
-            // DrawPixel(x, y, color);
-        }
-    }
-
-    // rlPopMatrix();
-
+    Rectangle sourceRec = { 0.0f, 0.0f, (float)target.texture.width, -(float)target.texture.height };
+    Rectangle destRec = { 0.0f, 0.0f, CANVAS_WIDTH, CANVAS_HEIGHT };
+    DrawTexturePro(target.texture, sourceRec, destRec, (Vector2){ 0, 0 }, 0, WHITE);
     EndDrawing();
 }
 
@@ -184,6 +193,20 @@ int main() {
     InitWindow(CANVAS_WIDTH, CANVAS_HEIGHT, "Computer Graphics from Scratch - Raytracing");
 
     SetTargetFPS(60);
+
+    target = LoadRenderTexture(CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    BeginTextureMode(target);
+    ClearBackground(BACKGROUND_COLOR);
+    Ray ray = { 0 };
+    for (int x = -CANVAS_WIDTH / 2; x <= CANVAS_WIDTH / 2; ++x) {
+        for (int y = -CANVAS_HEIGHT / 2; y <= CANVAS_HEIGHT / 2; ++y) {
+            ray.direction = canvas_to_viewport(x, y);
+            Color color = trace_ray(ray, 1, INFINITY);
+            put_pixel(x, y, color);
+        }
+    }
+    EndTextureMode();
 
     while (!WindowShouldClose()) {
         update();

@@ -12,7 +12,8 @@
         "random": "c",
         "typeinfo": "c",
         "stdlib.h": "c",
-        "entities.h": "c"
+        "entities.h": "c",
+        "rlgl.h": "c"
     },
     "sonarlint.pathToCompileCommands": "${workspaceFolder}\\build\\compile_commands.json"
 }
