@@ -202,9 +202,9 @@ static sphere_t spheres[] = {
 #define SPHERES_SIZE (sizeof(spheres) / sizeof(sphere_t))
 
 static light_t lights[] = {
-    [0] = { .type = LIGHT_TYPE_AMBIENT, .intensity = 0.2f },
-    [1] = { .type = LIGHT_TYPE_POINT, .intensity = 0.6f, .data.position = { 2, 1, 0 } },
-    [2] = { .type = LIGHT_TYPE_DIRECTIONAL, .intensity = 0.2f, .data.direction = { 1, 4, 4 } }
+    [0] = { .type = LIGHT_TYPE_AMBIENT, .intensity = 0.2 },
+    [1] = { .type = LIGHT_TYPE_POINT, .intensity = 0.6, .data.position = { 2, 1, 0 } },
+    [2] = { .type = LIGHT_TYPE_DIRECTIONAL, .intensity = 0.2, .data.direction = { 1, 4, 4 } }
 };
 #define LIGHTS_SIZE (sizeof(lights) / sizeof(light_t))
 
@@ -243,6 +243,20 @@ ray_sphere_intersection_t closest_intersection(ray_t ray, double t_min, double t
     return (ray_sphere_intersection_t){ .sphere = closest_sphere, .t = closest_t };
 }
 
+bool is_shadowed(ray_t ray, double t_min, double t_max) {
+    for (size_t i = 0; i < SPHERES_SIZE; ++i) {
+        vector2_t intersection_parameters = intersect_ray_sphere(ray, spheres[i]);
+        if (t_min <= intersection_parameters.x && intersection_parameters.x <= t_max) {
+            return true;
+        }
+
+        if (t_min <= intersection_parameters.y && intersection_parameters.y <= t_max) {
+            return true;
+        }
+    }
+    return false;
+}
+
 double compute_lighting(vector3_t contact_point, vector3_t normal, vector3_t contact_point_to_camera, double specular_exponent) {
     double intensity = 0.0;
     for (size_t k = 0; k < LIGHTS_SIZE; ++k) {
@@ -257,11 +271,17 @@ double compute_lighting(vector3_t contact_point, vector3_t normal, vector3_t con
                 t_max = 1;
             }
 
-            ray_sphere_intersection_t shadow_intersection = closest_intersection(
-                (ray_t){ .position = contact_point, .direction = light_vector },
-                0.001,
-                t_max);
-            if (shadow_intersection.sphere) {
+            // ray_sphere_intersection_t shadow_intersection = closest_intersection(
+            //     (ray_t){ .position = contact_point, .direction = light_vector },
+            //     0.001,
+            //     t_max);
+            // if (shadow_intersection.sphere) {
+            //     continue;
+            // }
+
+            if (is_shadowed((ray_t){ .position = contact_point, .direction = light_vector },
+                            0.001,
+                            t_max)) {
                 continue;
             }
 
