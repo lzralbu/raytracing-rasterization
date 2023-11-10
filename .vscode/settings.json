@@ -14,7 +14,9 @@
         "stdlib.h": "c",
         "entities.h": "c",
         "rlgl.h": "c",
-        "raymath.h": "c"
+        "raymath.h": "c",
+        "cmath": "c",
+        "complex": "c"
     },
     "sonarlint.pathToCompileCommands": "${workspaceFolder}\\build\\compile_commands.json"
 }

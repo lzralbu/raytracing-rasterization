@@ -4,8 +4,6 @@
 #include <stdlib.h>
 
 #include "raylib.h"
-#include "raymath.h"
-#include "rlgl.h"
 
 double clamp(double value, double lower, double upper) {
     if (value < lower) {
@@ -17,22 +15,89 @@ double clamp(double value, double lower, double upper) {
     return value;
 }
 
+double lerp(double start, double end, double amount) {
+    return (1 - amount) * start + amount * end;
+}
+
 typedef struct vector2_t {
     double x;
     double y;
 } vector2_t;
+
+typedef struct matrix3_t {
+    double a11;
+    double a12;
+    double a13;
+    double a21;
+    double a22;
+    double a23;
+    double a31;
+    double a32;
+    double a33;
+} matrix3_t;
+
+matrix3_t matrix3_multiply(matrix3_t p, matrix3_t q) {
+    return (matrix3_t){
+        .a11 = p.a11 * q.a11 + p.a12 * q.a21 + p.a13 * q.a31,
+        .a12 = p.a11 * q.a12 + p.a12 * q.a22 + p.a13 * q.a32,
+        .a13 = p.a11 * q.a13 + p.a12 * q.a23 + p.a13 * q.a33,
+        .a21 = p.a21 * q.a11 + p.a22 * q.a21 + p.a23 * q.a31,
+        .a22 = p.a21 * q.a12 + p.a22 * q.a22 + p.a23 * q.a32,
+        .a23 = p.a21 * q.a13 + p.a22 * q.a23 + p.a23 * q.a33,
+        .a31 = p.a31 * q.a11 + p.a32 * q.a21 + p.a33 * q.a31,
+        .a32 = p.a31 * q.a12 + p.a32 * q.a22 + p.a33 * q.a32,
+        .a33 = p.a31 * q.a13 + p.a32 * q.a23 + p.a33 * q.a33,
+    };
+}
+
+// "counter-clockwise" in right-handed coordinate systems
+matrix3_t matrix3_x_rotation_from_angle(double theta) {
+    return (matrix3_t){
+        .a11 = 1,
+        .a12 = 0,
+        .a13 = 0,
+        .a21 = 0,
+        .a22 = cos(theta),
+        .a23 = -sin(theta),
+        .a31 = 0,
+        .a32 = sin(theta),
+        .a33 = cos(theta),
+    };
+}
+
+matrix3_t matrix3_y_rotation_from_angle(double theta) {
+    return (matrix3_t){
+        .a11 = cos(theta),
+        .a12 = 0,
+        .a13 = sin(theta),
+        .a21 = 0,
+        .a22 = 1,
+        .a23 = 0,
+        .a31 = -sin(theta),
+        .a32 = 0,
+        .a33 = cos(theta),
+    };
+}
+
+matrix3_t matrix3_z_rotation_from_angle(double theta) {
+    return (matrix3_t){
+        .a11 = cos(theta),
+        .a12 = -sin(theta),
+        .a13 = 0,
+        .a21 = sin(theta),
+        .a22 = cos(theta),
+        .a23 = 0,
+        .a31 = 0,
+        .a32 = 0,
+        .a33 = 1,
+    };
+}
 
 typedef struct vector3_t {
     double x;
     double y;
     double z;
 } vector3_t;
-
-typedef struct color_t {
-    double r;
-    double g;
-    double b;
-} color_t;
 
 vector3_t vector3_add(vector3_t v1, vector3_t v2) {
     return (vector3_t){ .x = v1.x + v2.x, .y = v1.y + v2.y, .z = v1.z + v2.z };
@@ -65,6 +130,25 @@ vector3_t vector3_normalize(vector3_t v) {
 vector3_t vector3_reflect(vector3_t v, vector3_t normal) {
     return vector3_subtract(vector3_scale(normal, 2 * vector3_dot(v, normal)), v);
 }
+
+vector3_t vector3_transform(vector3_t v, matrix3_t transform) {
+    return (vector3_t){
+        .x = transform.a11 * v.x + transform.a12 * v.y + transform.a13 * v.z,
+        .y = transform.a21 * v.x + transform.a22 * v.y + transform.a23 * v.z,
+        .z = transform.a31 * v.x + transform.a32 * v.y + transform.a33 * v.z
+    };
+}
+
+typedef struct camera_t {
+    matrix3_t rotation;
+    vector3_t position;
+} camera_t;
+
+typedef struct color_t {
+    double r;
+    double g;
+    double b;
+} color_t;
 
 typedef struct ray_t {
     vector3_t position;
@@ -227,9 +311,9 @@ color_t trace_ray(ray_t ray, double t_min, double t_max, int depth) {
     color_t reflected_color = trace_ray((ray_t){ .position = contact_point, .direction = reflected_direction }, 0.001, INFINITY, depth - 1);
 
     return (color_t){
-        .r = (1.0 - r) * local_color.r + r * reflected_color.r,
-        .g = (1.0 - r) * local_color.g + r * reflected_color.g,
-        .b = (1.0 - r) * local_color.b + r * reflected_color.b,
+        .r = lerp(local_color.r, reflected_color.r, r),
+        .g = lerp(local_color.g, reflected_color.g, r),
+        .b = lerp(local_color.b, reflected_color.b, r)
     };
 }
 
@@ -279,14 +363,18 @@ int main() {
 
     SetTargetFPS(60);
 
+    camera_t camera = {
+        .position = { 3, 4, -2 },
+        .rotation = matrix3_multiply(matrix3_y_rotation_from_angle(-M_PI / 6), matrix3_x_rotation_from_angle(M_PI / 6))
+    };
     target = LoadRenderTexture(CANVAS_WIDTH, CANVAS_HEIGHT);
 
     BeginTextureMode(target);
     ClearBackground(BLACK);
-    ray_t ray = { 0 };
     for (int x = -CANVAS_WIDTH / 2; x <= CANVAS_WIDTH / 2; ++x) {
         for (int y = -CANVAS_HEIGHT / 2; y <= CANVAS_HEIGHT / 2; ++y) {
-            ray.direction = canvas_to_viewport(x, y);
+            ray_t ray = { .position = camera.position,
+                          .direction = vector3_transform(canvas_to_viewport(x, y), camera.rotation) };
             color_t color = trace_ray(ray, 1, INFINITY, 3);
             put_pixel(x, y, color);
         }
