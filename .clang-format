@@ -1,14 +1,27 @@
 BasedOnStyle: LLVM
-UseTab: Never
 IndentWidth: 4
 TabWidth: 4
+UseTab: Never
 
+AccessModifierOffset: -4
+AlignAfterOpenBracket: BlockIndent
+AllowShortBlocksOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+
+BinPackArguments: false
+BreakBeforeBinaryOperators: None
 BreakBeforeBraces: Attach
+BreakBeforeTernaryOperators: true
+
+ColumnLimit: 96
 Cpp11BracedListStyle: false
+
+FixNamespaceComments: false
+
 IndentCaseLabels: true
 
-AllowShortIfStatementsOnASingleLine: false
-ColumnLimit: 0
-AccessModifierOffset: -4
+KeepEmptyLinesAtTheStartOfBlocks: false
+
 NamespaceIndentation: All
-FixNamespaceComments: false
+
+SeparateDefinitionBlocks: Always
