@@ -18,5 +18,6 @@
         "cmath": "c",
         "complex": "c"
     },
-    "sonarlint.pathToCompileCommands": "${workspaceFolder}\\build\\compile_commands.json"
+    "sonarlint.pathToCompileCommands": "${workspaceFolder}\\build\\compile_commands.json",
+    "dotnetAcquisitionExtension.installTimeoutValue": 500
 }

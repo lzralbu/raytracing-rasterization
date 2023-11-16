@@ -1,4 +1,3 @@
-BasedOnStyle: LLVM
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
@@ -6,6 +5,7 @@ UseTab: Never
 AccessModifierOffset: -4
 AlignAfterOpenBracket: BlockIndent
 AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: false
 
 BinPackArguments: false
@@ -13,7 +13,7 @@ BreakBeforeBinaryOperators: None
 BreakBeforeBraces: Attach
 BreakBeforeTernaryOperators: true
 
-ColumnLimit: 96
+ColumnLimit: 120
 Cpp11BracedListStyle: false
 
 FixNamespaceComments: false

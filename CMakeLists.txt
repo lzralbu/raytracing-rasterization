@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 99)
 
 find_package(raylib 4.0 REQUIRED)
 
-add_executable(${PROJECT_NAME} src/main.c)
+add_executable(${PROJECT_NAME} src/main.c src/vmath.c)
 
 add_subdirectory(libs)
 
