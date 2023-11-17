@@ -11,7 +11,7 @@ add_subdirectory(libs)
 
 target_compile_options(${PROJECT_NAME} PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>: /W4 /Zc:preprocessor>
-  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wall -Wextra -Wpedantic>
+  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wall -Wextra -Wpedantic -Wno-missing-braces>
 )
 
 target_link_libraries(${PROJECT_NAME} raylib)

@@ -32,8 +32,7 @@ int vec_reserve_(char **data, int *length, int *capacity, int memsz, int n) {
     return 0;
 }
 
-int vec_reserve_po2_(
-    char **data, int *length, int *capacity, int memsz, int n) {
+int vec_reserve_po2_(char **data, int *length, int *capacity, int memsz, int n) {
     int n2 = 1;
     if (n == 0)
         return 0;
@@ -60,35 +59,25 @@ int vec_compact_(char **data, int *length, int *capacity, int memsz) {
     return 0;
 }
 
-int vec_insert_(char **data, int *length, int *capacity, int memsz,
-                int idx) {
+int vec_insert_(char **data, int *length, int *capacity, int memsz, int idx) {
     int err = vec_expand_(data, length, capacity, memsz);
     if (err)
         return err;
-    memmove(*data + (idx + 1) * memsz,
-            *data + idx * memsz,
-            (*length - idx) * memsz);
+    memmove(*data + (idx + 1) * memsz, *data + idx * memsz, (*length - idx) * memsz);
     return 0;
 }
 
-void vec_splice_(char **data, int *length, int *capacity, int memsz,
-                 int start, int count) {
+void vec_splice_(char **data, int *length, int *capacity, int memsz, int start, int count) {
     (void)capacity;
-    memmove(*data + start * memsz,
-            *data + (start + count) * memsz,
-            (*length - start - count) * memsz);
+    memmove(*data + start * memsz, *data + (start + count) * memsz, (*length - start - count) * memsz);
 }
 
-void vec_swapsplice_(char **data, int *length, int *capacity, int memsz,
-                     int start, int count) {
+void vec_swapsplice_(char **data, int *length, int *capacity, int memsz, int start, int count) {
     (void)capacity;
-    memmove(*data + start * memsz,
-            *data + (*length - count) * memsz,
-            count * memsz);
+    memmove(*data + start * memsz, *data + (*length - count) * memsz, count * memsz);
 }
 
-void vec_swap_(char **data, int *length, int *capacity, int memsz,
-               int idx1, int idx2) {
+void vec_swap_(char **data, int *length, int *capacity, int memsz, int idx1, int idx2) {
     unsigned char *a, *b, tmp;
     int count;
     (void)length;

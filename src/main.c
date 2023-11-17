@@ -24,20 +24,26 @@ typedef struct geometry_data_triangle_t {
     vector3_t vertices[3];
 } geometry_data_triangle_t;
 
-vector3_t geometry_get_normal_at(geometry_t const *geometry, vector3_t const *point) {
+void geometry_get_normal_at(vector3_t *result, geometry_t const *geometry, vector3_t const *point) {
     if (geometry->type == GEOMETRY_TYPE_SPHERE) {
         geometry_data_sphere_t const *sphere = (geometry_data_sphere_t const *)geometry->data;
-        vector3_t diff = vector3_subtract(point, &sphere->center);
-        return vector3_normalize(&diff);
+        vector3_t diff;
+        vector3_subtract(&diff, point, &sphere->center);
+        vector3_normalize(result, &diff);
     } else if (geometry->type == GEOMETRY_TYPE_TRIANGLE) {
         geometry_data_triangle_t const *triangle = (geometry_data_triangle_t const *)geometry->data;
-        vector3_t ab = vector3_subtract(&triangle->vertices[1], &triangle->vertices[0]);
-        vector3_t ac = vector3_subtract(&triangle->vertices[2], &triangle->vertices[0]);
-        vector3_t cross = vector3_cross(&ab, &ac);
-        // vector3_t cross = vector3_cross(&ac, &ab);
-        return vector3_normalize(&cross);
+        vector3_t ab;
+        vector3_subtract(&ab, &triangle->vertices[1], &triangle->vertices[0]);
+        vector3_t ac;
+        vector3_subtract(&ac, &triangle->vertices[2], &triangle->vertices[0]);
+        vector3_t cross;
+        vector3_cross(&cross, &ab, &ac);
+        vector3_normalize(result, &cross);
+    } else {
+        result->a[0] = INFINITY;
+        result->a[1] = INFINITY;
+        result->a[2] = INFINITY;
     }
-    return (vector3_t){ 0 };
 }
 
 typedef struct material_t {
@@ -88,11 +94,13 @@ typedef struct scene_t {
 } scene_t;
 
 void scene_init(scene_t *scene) {
-    scene->camera.position = (vector3_t){ 0, 2.5, -2, 0 };
+    scene->camera.position = (vector3_t){ 0, 2, -2 };
 
-    matrix_t y_rotation = matrix_y_rotation_from_angle(0);
-    matrix_t x_rotation = matrix_x_rotation_from_angle(M_PI / 6);
-    scene->camera.rotation = matrix_multiply(&y_rotation, &x_rotation);
+    matrix_t y_rotation;
+    matrix_y_rotation_from_angle(&y_rotation, 0);
+    matrix_t x_rotation;
+    matrix_x_rotation_from_angle(&x_rotation, M_PI / 6);
+    matrix_multiply(&scene->camera.rotation, &y_rotation, &x_rotation);
 
     static geometry_data_sphere_t geometry_data_spheres[] = { [0] = {
                                                          .center = { 0, -1, 3 },
@@ -165,18 +173,18 @@ void scene_quit(scene_t *scene) {
     vec_deinit(&scene->lights);
 }
 
-static const int CANVAS_WIDTH = 600;
-static const int CANVAS_HEIGHT = 600;
+static const int CANVAS_WIDTH = 900;
+static const int CANVAS_HEIGHT = 900;
 
 static const double VIEWPORT_WIDTH = 1;
 static const double VIEWPORT_HEIGHT = 1;
 static const double VIEWPORT_CAMERA_DISTANCE = 1;
 
-static scene_t main_scene;
-
 const color_t BACKGROUND_COLOR = { 0, 0, 0, 1 };
 
 // const color_t BACKGROUND_COLOR = { 1, 1, 1, 1 };
+
+static scene_t main_scene;
 
 typedef double matrix_3x4_t[3][4];
 
@@ -258,7 +266,8 @@ vec_double_t intersect_ray_primitive(ray_t const *ray, primitive_t const *primit
 
     if (primitive->geometry.type == GEOMETRY_TYPE_SPHERE) {
         geometry_data_sphere_t const *geometry_data = (geometry_data_sphere_t const *)primitive->geometry.data;
-        vector3_t temp_vec = vector3_subtract(&ray->position, &geometry_data->center);
+        vector3_t temp_vec;
+        vector3_subtract(&temp_vec, &ray->position, &geometry_data->center);
         double a = vector3_dot(&ray->direction, &ray->direction);
         double b = 2 * vector3_dot(&temp_vec, &ray->direction);
         double c = vector3_dot(&temp_vec, &temp_vec) - geometry_data->radius * geometry_data->radius;
@@ -270,11 +279,15 @@ vec_double_t intersect_ray_primitive(ray_t const *ray, primitive_t const *primit
         }
     } else if (primitive->geometry.type == GEOMETRY_TYPE_TRIANGLE) {
         geometry_data_triangle_t const *geometry_data = (geometry_data_triangle_t const *)primitive->geometry.data;
-        vector3_t p = vector3_subtract(&geometry_data->vertices[1], &geometry_data->vertices[0]);
-        vector3_t q = vector3_subtract(&geometry_data->vertices[2], &geometry_data->vertices[0]);
-        vector3_t cross_pq = vector3_cross(&p, &q);
-        if (fabs(vector3_dot(&cross_pq, &ray->direction)) > 0.000001) {
-            vector3_t w = vector3_subtract(&ray->position, &geometry_data->vertices[0]);
+        vector3_t p;
+        vector3_subtract(&p, &geometry_data->vertices[1], &geometry_data->vertices[0]);
+        vector3_t q;
+        vector3_subtract(&q, &geometry_data->vertices[2], &geometry_data->vertices[0]);
+        vector3_t cross_pq;
+        vector3_cross(&cross_pq, &p, &q);
+        if (fabs(vector3_dot(&cross_pq, &ray->direction)) > 0.001) {
+            vector3_t w;
+            vector3_subtract(&w, &ray->position, &geometry_data->vertices[0]);
             double augmented_matrix[3][4] = {
                 [0] = { [0] = p.a[0], [1] = q.a[0], [2] = -ray->direction.a[0], [3] = w.a[0] },
                 [1] = { [0] = p.a[1], [1] = q.a[1], [2] = -ray->direction.a[1], [3] = w.a[1] },
@@ -341,16 +354,17 @@ double compute_lighting(
             vector3_t light_vector = light->data.direction;
             double t_max = INFINITY;
             if (light->type == LIGHT_TYPE_POINT) {
-                light_vector = vector3_subtract(&light->data.position, contact_point);
+                vector3_subtract(&light_vector, &light->data.position, contact_point);
                 t_max = 1;
             }
 
-            ray_t const temp_ray = { .position = *contact_point, .direction = light_vector };
+            ray_t temp_ray = { .position = *contact_point, .direction = light_vector };
             if (is_shadowed(&temp_ray, 0.001, t_max)) {
                 continue;
             }
 
             // diffuse
+
             double dot = vector3_dot(&light_vector, normal);
             if (dot > 0) {
                 intensity += light->intensity * dot / vector3_length(&light_vector);
@@ -360,7 +374,8 @@ double compute_lighting(
             if (specular_exponent == -1) {
                 continue;
             }
-            vector3_t reflection = vector3_reflect(&light_vector, normal);
+            vector3_t reflection;
+            vector3_reflect(&reflection, &light_vector, normal);
             double dot2 = vector3_dot(&reflection, contact_point_to_camera);
             if (dot2 > 0) {
                 intensity += light->intensity *
@@ -373,61 +388,63 @@ double compute_lighting(
     return intensity;
 }
 
-color_t trace_ray(ray_t const *ray, double t_min, double t_max, int depth) {
+void trace_ray(color_t *result, ray_t const *ray, double t_min, double t_max, int depth) {
     ray_primitive_intersection_t intersection = closest_intersection(ray, t_min, t_max);
     if (!intersection.primitive) {
-        return BACKGROUND_COLOR;
+        memcpy(result, &BACKGROUND_COLOR, sizeof(color_t));
+        return;
     }
 
-    vector3_t ray_direction_scaled = vector3_scale(&ray->direction, intersection.parameters.data[0]);
+    // lights
+
+    vector3_t ray_direction_scaled;
+    vector3_scale(&ray_direction_scaled, &ray->direction, intersection.parameters.data[0]);
     vec_deinit(&intersection.parameters);
 
-    vector3_t contact_point = vector3_add(&ray->position, &ray_direction_scaled);
-    vector3_t normal = geometry_get_normal_at(&intersection.primitive->geometry, &contact_point);
-    vector3_t ray_direction_negated = vector3_negate(&ray->direction);
+    vector3_t contact_point;
+    vector3_add(&contact_point, &ray->position, &ray_direction_scaled);
+    vector3_t normal;
+    geometry_get_normal_at(&normal, &intersection.primitive->geometry, &contact_point);
+    vector3_t ray_direction_negated;
+    vector3_negate(&ray_direction_negated, &ray->direction);
     double lighting =
         compute_lighting(&contact_point, &normal, &ray_direction_negated, intersection.primitive->material.specular);
+    color_t material_color_scaled;
+    vector4_scale(&material_color_scaled, &intersection.primitive->material.color, lighting);
+    color_t local_color;
+    vector4_clamp(&local_color, &material_color_scaled, 0, 1);
 
-    color_t material_color_scaled = vector4_scale(&intersection.primitive->material.color, lighting);
-    color_t local_color = vector4_clamp(&material_color_scaled, 0, 1);
+    // reflection
 
     double r = intersection.primitive->material.reflective;
     if (depth <= 0 || r <= 0) {
-        return local_color;
+        memcpy(result, &local_color, sizeof(color_t));
+        return;
     }
 
-    vector3_t reflected_direction = vector3_reflect(&ray_direction_negated, &normal);
+    vector3_t reflected_direction;
+    vector3_reflect(&reflected_direction, &ray_direction_negated, &normal);
     ray_t new_ray = { .position = contact_point, .direction = reflected_direction };
-    color_t reflected_color = trace_ray(&new_ray, 0.001, INFINITY, depth - 1);
+    color_t reflected_color;
+    trace_ray(&reflected_color, &new_ray, 0.001, INFINITY, depth - 1);
 
-    return vector4_lerp(&local_color, &reflected_color, r);
+    vector4_lerp(result, &local_color, &reflected_color, r);
 }
 
-vector3_t canvas_to_viewport(int canvas_x, int canvas_y) {
-    vector3_t viewport_coordinates;
-    viewport_coordinates.a[0] = (double)canvas_x * VIEWPORT_WIDTH / CANVAS_WIDTH;
-    viewport_coordinates.a[1] = (double)canvas_y * VIEWPORT_HEIGHT / CANVAS_HEIGHT;
-    viewport_coordinates.a[2] = VIEWPORT_CAMERA_DISTANCE;
-    return viewport_coordinates;
+void canvas_to_viewport(vector3_t *result, int canvas_x, int canvas_y) {
+    result->a[0] = (double)canvas_x * VIEWPORT_WIDTH / CANVAS_WIDTH;
+    result->a[1] = (double)canvas_y * VIEWPORT_HEIGHT / CANVAS_HEIGHT;
+    result->a[2] = VIEWPORT_CAMERA_DISTANCE;
 }
 
-vector2_t canvas_to_screen(int canvas_x, int canvas_y) {
-    vector2_t screen_coordinates;
-    screen_coordinates.a[0] = CANVAS_WIDTH / 2.0 + (double)canvas_x;
-    screen_coordinates.a[1] = CANVAS_HEIGHT / 2.0 - (double)canvas_y;
-    return screen_coordinates;
+void canvas_to_screen(vector2_t *result, int canvas_x, int canvas_y) {
+    result->a[0] = CANVAS_WIDTH / 2.0 + (double)canvas_x;
+    result->a[1] = CANVAS_HEIGHT / 2.0 - (double)canvas_y;
 }
 
 void put_pixel(int canvas_x, int canvas_y, color_t color) {
-    vector2_t screen_coord = canvas_to_screen(canvas_x, canvas_y);
-    // DrawPixel(
-    //     (int)screen_coord.a[0],
-    //     (int)screen_coord.a[1],
-    //     (Color){ .r = (uint8_t)round(color.a[0] * 255),
-    //              .g = (uint8_t)round(color.a[1] * 255),
-    //              .b = (uint8_t)round(color.a[2] * 255),
-    //              .a = (uint8_t)round(color.a[3] * 255) }
-    // );
+    vector2_t screen_coord;
+    canvas_to_screen(&screen_coord, canvas_x, canvas_y);
 
     DrawPixel(
         (int)screen_coord.a[0],
@@ -437,15 +454,6 @@ void put_pixel(int canvas_x, int canvas_y, color_t color) {
                  .b = (uint8_t)round(color.a[2] * 255),
                  .a = 255 }
     );
-
-    // color_t color_scaled = vector4_scale(&color, 255);
-    // color_t color_clamped = vector4_clamp(&color_scaled, 0, 255);
-    // DrawPixel(
-    //     (int)screen_coord.a[0],
-    //     (int)screen_coord.a[1],
-    //     (Color){ .r = (uint8_t)color_clamped.a[0], .g = (uint8_t)color_clamped.a[1], .b =
-    //     (uint8_t)color_clamped.a[2], .a = 255 }
-    // );
 }
 
 RenderTexture target;
@@ -475,11 +483,16 @@ int main() {
     ClearBackground(BLACK);
     for (int x = -CANVAS_WIDTH / 2; x <= CANVAS_WIDTH / 2; ++x) {
         for (int y = -CANVAS_HEIGHT / 2; y <= CANVAS_HEIGHT / 2; ++y) {
-            vector3_t viewport_coords = canvas_to_viewport(x, y);
-            ray_t ray = { .position = main_scene.camera.position,
-                          .direction = vector3_transform(&viewport_coords, &main_scene.camera.rotation) };
-            // ray_t ray = { .position = main_scene.camera.position, .direction = viewport_coords };
-            color_t color = trace_ray(&ray, 1, INFINITY, 3);
+            vector3_t viewport_coords;
+            canvas_to_viewport(&viewport_coords, x, y);
+
+            ray_t ray;
+            ray.position = main_scene.camera.position;
+            vector3_transform(&ray.direction, &viewport_coords, &main_scene.camera.rotation);
+
+            color_t color;
+            trace_ray(&color, &ray, 1, INFINITY, 3);
+
             put_pixel(x, y, color);
         }
     }
